@@ -1,0 +1,22 @@
+<!-- language=rust prefix=<rust.*>\n suffix=\n</rust> -->
+<rust>
+    use std::collections::HashMap;
+    use actix_web::*;
+
+    pub async fn index(req: HttpRequest) -> HashMap<&'static str, String> {
+        let conn_info = req.connection_info();
+        let host = conn_info.host().to_owned();
+        HashMap::from([
+            ("title", host)
+        ])
+    }
+</rust>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{title}}</title>
+</head>
+<body>
+</body>
+</html>

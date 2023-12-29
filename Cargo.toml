@@ -1,0 +1,16 @@
+[package]
+name = "dirthouse"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4.4.1"
+anyhow = "1.0.77"
+handlebars = "4.5.0"
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+tempfile = "3.9.0"
+tl = { version = "0.7.7"}
+walkdir = "2.4.0"
