@@ -41,8 +41,13 @@ macro_rules! replace_file {
 fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
     let app_dir_path = Path::new(config.app_name.as_str());
     let dir_builder = fs::DirBuilder::new();// tempfile::tempdir().unwrap();
+
+
     if let Ok(()) = dir_builder.create(app_dir_path) {
-        run!("cargo", "init", "--vcs", "none", app_dir_path).expect("Could not run cargo init!");
+        run!("cargo", "init", "--vcs", "none", app_dir_path).expect(
+            "Could not run cargo init!\
+            Do you have the Rust dev tools installed? If not, go to https://rustup.rs/ and get started!"
+        );
     }
 
     // Make sure that cargo has the minimal dependencies
