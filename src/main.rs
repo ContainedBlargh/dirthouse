@@ -61,14 +61,14 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
     }
 
     // Then construct the main.rs file.
-    let lib_src = modules
+    let main_source = modules
         .iter()
         .map(|module| format!("mod {};\n", module.name))
         .reduce(|a, b| format!("{}\n{}", a, b))
         .unwrap_or(String::new())
         .add(main_source.as_str());
 
-    replace_file!(path.join("src").join("main.rs"), lib_src).expect("Could not replace lib file!");
+    replace_file!(path.join("src").join("main.rs"), main_source).expect("Could not replace main file!");
 
     // Now compile the executable:
     let old_dir = std::env::current_dir().unwrap();
