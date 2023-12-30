@@ -103,14 +103,7 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
     } else {
         let serve_path = Path::new(&config.serve_dir);
         if serve_path.is_relative() {
-            let dest = app_dir_path.join(&config.serve_dir);
-            let result = if cfg!(windows) {
-                std::os::windows::fs::symlink_dir(&config.serve_dir, app_dir_path.join(&config.serve_dir))
-            } else if cfg!(unix) {
-                fs::soft_link(&config.serve_dir, app_dir_path.join(&config.serve_dir))
-            } else {
-                panic!("Unsupported operating system type...")
-            };
+            let result = fs::soft_link(&config.serve_dir, app_dir_path.join(&config.serve_dir));
             if let Err(err) = result {
                 eprintln!("Warning: Could not automatically link serve_dir.\n{}", err);
             }
@@ -124,7 +117,7 @@ pub struct MainData {
     pub modules: Vec<Module>,
 }
 
-use clap::{arg, Arg, ArgMatches, Command, Parser};
+use clap::{Arg, Command, Parser};
 fn cli() -> Command {
     Command::new("dirthouse")
         .about("php-like web apps with Rust")
