@@ -20,11 +20,14 @@
         message: String,
     }
 
-    #[post("$route_print")]
-    pub async fn print_string(form: web::Form< FormData >) -> HttpResponse {
+    #[post("$route_post_message")]
+    pub async fn post_message(req: HttpRequest, form: web::Form< FormData >) -> HttpResponse {
+        let conn_info = req.connection_info();
+        let client = conn_info.realip_remote_addr().unwrap().to_owned();
+        let new_message = format!("{}: {}", client, form.message);
+        println!("{}", new_message);
         let mut messages = MESSAGES.lock().unwrap();
-        println!("{}", form.message);
-        messages.push(form.message.to_string());
+        messages.push(new_message.to_string());
         HttpResponse::Found()
             .append_header(("Location", "/"))
             .finish()
@@ -38,10 +41,11 @@
 
     pub async fn template(req: HttpRequest) -> PageData {
         let conn_info = req.connection_info();
-        let host = conn_info.host().to_owned();
+        let client = conn_info.realip_remote_addr().unwrap().to_owned();
+        let title = format!("Welcome {}", client);
         let messages = MESSAGES.lock().unwrap();
         PageData {
-            title: host,
+            title,
             messages: messages.to_vec()
         }
     }
@@ -54,17 +58,17 @@
 </head>
 <body>
 <h1>{{title}}</h1>
-<p>This is a test. The title displayed above should be like... your host name?</p>
-<p>Here are the messages stored in the server!</p>
+<p>This is a test. The title displayed above should be your connection IP.</p>
+<p>Here are the messages currently stored in the server!</p>
 <div id="messages">
 {{#each messages}}
     <pre>{{this}}</pre>
 {{/each}}
 </div>
-<form id="form" action="$route_print" method="post">
+<form id="form" action="$route_post_message" method="post">
     <label for="message">
         Send a message to the server!
-        <input type="text" id="message" name="message">
+        <input type="text" id="message" name="message" autofocus>
     </label>
     <button>Print</button>
 </form>

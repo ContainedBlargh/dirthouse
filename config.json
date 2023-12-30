@@ -1,0 +1,6 @@
+{
+  "app_name": "app",
+  "serve_dir": "dist",
+  "host_addr": "172.30.20.23",
+  "port": 7642
+}
