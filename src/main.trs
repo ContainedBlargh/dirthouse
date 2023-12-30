@@ -1,6 +1,8 @@
 use actix_web::*;
 use handlebars::Handlebars;
 use actix_web::middleware::Logger;
+use actix_files::NamedFile;
+use std::path::{Path, PathBuf};
 
 pub struct AppState {
     handlebars: Handlebars<'static>,
@@ -36,6 +38,20 @@ pub async fn {{name}}_template(req: HttpRequest, state: web::Data<AppState>) -> 
     {{/if}}
 {{/each}}
 
+async fn serve_file(req: HttpRequest) -> Result<NamedFile> {
+    let path: PathBuf = req.match_info().query("filename").parse().unwrap();
+    let serve_path = Path::new("{{config.serve_dir}}");
+    let path = serve_path.join(path);
+    if let Some(extension) = path.extension() {
+        if extension.eq_ignore_ascii_case("rsr") {
+            panic!("Not found!");
+        } else {
+            return Ok(NamedFile::open(path)?);
+        }
+    }
+    Ok(NamedFile::open(path)?)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let mut handlebars = Handlebars::new();
@@ -57,6 +73,7 @@ async fn main() -> std::io::Result<()> {
     println!("┼──►[{{method}}]: {{route}} {{name}}");
         {{/each}}
     {{/each}}
+    println!("Also statically serving files from '{{config.serve_dir}}'");
     let handlebars = handlebars;
     HttpServer::new(move || {
         App::new()
@@ -70,6 +87,7 @@ async fn main() -> std::io::Result<()> {
             .service({{../name}}::{{name}})
         {{/each}}
     {{/each}}
+            .route("/{filename:.*}", web::get().to(serve_file))
             .wrap(Logger::default())
     })
         .bind(("{{config.host_addr}}", {{config.port}}))?

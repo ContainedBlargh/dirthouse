@@ -29,12 +29,13 @@ fn ensure_lines_in_file(file_path: &Path, lines: Vec<String>) -> std::io::Result
     Ok(())
 }
 
-const DEPS: [(&str, &str); 5] = [
+const DEPS: [(&str, &str); 6] = [
     ("actix-web", "\"4.4.1\""),
     ("serde", "{ version = \"1.0.193\", features = [\"derive\"] }"),
     ("serde_json", "\"1.0.108\""),
     ("handlebars", "\"4.5.0\""),
     ("lazy_static", "\"1.4.0\""),
+    ("actix-files", "\"0.6.2\""),
 ];
 
 pub fn write_deps(config: &DirtConfig, path: &Path) -> std::io::Result<()> {
@@ -42,7 +43,11 @@ pub fn write_deps(config: &DirtConfig, path: &Path) -> std::io::Result<()> {
         .into_iter()
         .map(|(package, ver)| format!("\"{}\" = {}", package, ver))
         .collect();
-    let additional_deps: Vec<String> = config.additional_packages.iter()
+    let additional_deps = config.additional_packages
+        .clone()
+        .unwrap_or(vec![]);
+    let additional_deps: Vec<String> = additional_deps
+        .iter()
         .map(|package| format!("\"{}\" = {}", package.name, package.descriptor))
         .collect();
     dep_lines.extend(additional_deps);
