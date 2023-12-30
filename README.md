@@ -70,3 +70,38 @@ I picked up the picture of the minecraft house on the interwebs, it's not even m
 But  don't worry, I'll get a screenshot from minecraft soon™
 </small>
 
+## Usage
+
+Since `dirthouse` calls `cargo` multiple times from the shell, it is required to have Rust and Cargo installed beforehand. You can download and install those at https://rustup.rs/.
+
+```
+php-like web apps with Rust
+
+Usage: dirthouse.exe <COMMAND>
+
+Commands:
+  build  Builds a new web app based on default or given configuration.
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
+```
+
+Here's an example JSON config:
+```
+{
+  "app_name": "app",
+  "serve_dir": "dist",
+  "host_addr": "127.0.0.1",
+  "port": 7642,
+  "cleanup": true
+}
+```
+
+Ideally you would run `dirthouse build` in a folder with your config.json file and a `serve_dir` containing your static files and your `.rsr`-files.
+Then, a new `actix-web` app project folder is created with your implementation and compiled. The resulting binary is then ready to run from your current folder.
+You can set the cleanup flag to true to delete the project folder after building. 
+You can also use an absolute path for your `serve_dir` in your configuration, then your resulting app will always know where to serve your static files from.
+The `.rsr`-files are embedded in your binary, so you can delete or move them, or just leave them be.
+
+I think, down the line, that I would like dirthouse to have a watch-command that can continually rebuild your dirthouse app, but idk.
