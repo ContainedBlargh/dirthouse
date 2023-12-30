@@ -2,7 +2,7 @@ mod modules;
 mod config;
 mod dependencies;
 
-use std::fs;
+use std::{env, fs};
 use std::ops::Add;
 use std::path::Path;
 use handlebars::Handlebars;
@@ -104,7 +104,6 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
         let serve_path = Path::new(&config.serve_dir);
         if serve_path.is_relative() {
             let dest = app_dir_path.join(&config.serve_dir);
-            println!("linking: '{:?}' -> '{:?}'", &config.serve_dir, dest);
             let result = if cfg!(windows) {
                 std::os::windows::fs::symlink_dir(&config.serve_dir, app_dir_path.join(&config.serve_dir))
             } else if cfg!(unix) {
@@ -113,7 +112,7 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
                 panic!("Unsupported operating system type...")
             };
             if let Err(err) = result {
-                eprintln!("Could not automatically link serve_dir.\n{}", err);
+                eprintln!("Warning: Could not automatically link serve_dir.\n{}", err);
             }
         }
     }
@@ -125,8 +124,26 @@ pub struct MainData {
     pub modules: Vec<Module>,
 }
 
-fn main() {
-    let config = config::load();
+use clap::{arg, Arg, ArgMatches, Command, Parser};
+fn cli() -> Command {
+    Command::new("dirthouse")
+        .about("php-like web apps with Rust")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .allow_external_subcommands(true)
+        .subcommand(
+            Command::new("build")
+                .about("Builds a new web app based on default or given configuration.")
+                .arg(Arg::new("config")
+                    .short('c')
+                    .help(r#"A JSON config file, must contain the fields "app_name", "serve_dir", "host_addr" and "port"."#)
+                    .default_value("config.json")
+                )
+        )
+}
+
+fn build(cli_path: String) {
+    let config = config::load(cli_path);
     let modules: Vec<Module> = find_modules(&config)
         .into_iter()
         .filter_map(modules::parse_module)
@@ -141,4 +158,18 @@ fn main() {
         .render_template(main_template, &main_data)
         .expect("Could not render config unto main template!");
     compile(&config, &modules, rendered);
+}
+
+fn main() {
+    let matches = cli().get_matches();
+    match matches.subcommand() {
+        Some(("build", sub_matches)) => {
+            let config_path = sub_matches
+                .get_one::<String>("config")
+                .map(|it|it.to_owned())
+                .unwrap_or("config.json".to_string());
+            build(config_path)
+        }
+        _ => {}
+    }
 }

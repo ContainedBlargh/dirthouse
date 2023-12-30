@@ -19,20 +19,17 @@ pub struct DirtConfig {
     pub cleanup: Option<bool>,
 }
 
-pub fn load() -> DirtConfig {
-    fn try_load() -> serde_json::error::Result<DirtConfig> {
-        let args: Vec<String> = env::args().skip(1).collect();
-        let default = String::from("config.json");
-        let path = args.first().unwrap_or(&default);
+pub fn load(path: String) -> DirtConfig {
+    fn try_load(path: String) -> serde_json::error::Result<DirtConfig> {
         let mut file = File::open(path).map_err(serde::de::Error::custom)?;
         let mut data: Vec<_> = Vec::new();
         file.read_to_end(&mut data).map_err(serde::de::Error::custom)?;
         serde_json::from_slice(&data)
     }
 
-    try_load().unwrap_or_else(|err| {
+    try_load(path).unwrap_or_else(|err| {
         eprintln!(
-            "Could not parse JSON config, either provide the path to one as an argument \
+            "Warning: Could not parse JSON config, either provide the path to one as an argument \
             or create a config.json file in this directory."
         );
         eprintln!("{:?}", err.to_string());
