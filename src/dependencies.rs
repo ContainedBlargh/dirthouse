@@ -2,6 +2,7 @@ use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+use crate::config::DirtConfig;
 
 fn ensure_lines_in_file(file_path: &Path, lines: Vec<String>) -> std::io::Result<()> {
     // Read existing lines from the file
@@ -28,17 +29,22 @@ fn ensure_lines_in_file(file_path: &Path, lines: Vec<String>) -> std::io::Result
     Ok(())
 }
 
-const DEPS: [(&str, &str); 4] = [
+const DEPS: [(&str, &str); 5] = [
     ("actix-web", "\"4.4.1\""),
     ("serde", "{ version = \"1.0.193\", features = [\"derive\"] }"),
     ("serde_json", "\"1.0.108\""),
     ("handlebars", "\"4.5.0\""),
+    ("lazy_static", "\"1.4.0\""),
 ];
 
-pub fn write_deps(path: &Path) -> std::io::Result<()> {
-    let dep_lines: Vec<String> = DEPS
+pub fn write_deps(config: &DirtConfig, path: &Path) -> std::io::Result<()> {
+    let mut dep_lines: Vec<String> = DEPS
         .into_iter()
         .map(|(package, ver)| format!("\"{}\" = {}", package, ver))
         .collect();
+    let additional_deps: Vec<String> = config.additional_packages.iter()
+        .map(|package| format!("\"{}\" = {}", package.name, package.descriptor))
+        .collect();
+    dep_lines.extend(additional_deps);
     ensure_lines_in_file(path, dep_lines)
 }

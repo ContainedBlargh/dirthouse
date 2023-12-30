@@ -39,8 +39,6 @@ macro_rules! replace_file {
 }
 
 fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
-    let serve_dir_str = config.serve_dir.to_string();
-    let serve_dir = Path::new(&serve_dir_str);
     let path = Path::new("app");
     let dir_builder = fs::DirBuilder::new();// tempfile::tempdir().unwrap();
     if let Ok(()) = dir_builder.create(path) {
@@ -52,11 +50,11 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
     let cargo_path = cargo_pb.as_path();
     let expect_msg = format!("Could not add deps to {:?}/Cargo.toml", path);
     let expect_msg_str = expect_msg.as_str();
-    dependencies::write_deps(cargo_path).expect(expect_msg_str);
+    dependencies::write_deps(config, cargo_path).expect(expect_msg_str);
 
-    // Now run through each of the modules and move their Rust implementation into files.
+    // Now run through each of the modules and move their Rust implementation and markup into files.
     for module in modules {
-        let markup_path = serve_dir.join(format!("{}.html", module.name));
+        let markup_path = path.join("src").join(format!("{}.html.hbs", module.name));
         replace_file!(markup_path, module.markup).expect("Could not replace markup file!");
         let src_path = path.join("src").join(format!("{}.rs", module.name));
         replace_file!(src_path, module.source).expect("Could nto replace source file!");
@@ -72,7 +70,7 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
 
     replace_file!(path.join("src").join("main.rs"), lib_src).expect("Could not replace lib file!");
 
-    // Now compile the library:
+    // Now compile the executable:
     let old_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(path).expect("Could not switch working directory!");
     run!("cargo", "fmt").expect("Could not format app sources!");

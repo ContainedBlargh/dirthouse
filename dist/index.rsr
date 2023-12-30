@@ -1,20 +1,49 @@
 <!-- language=rust prefix=<rust> suffix=</rust> -->
 <rust>
-    use std::collections::HashMap;
     use actix_web::*;
+    use lazy_static::lazy_static;
+    use serde::{Serialize, Deserialize};
+    use std::sync::{Arc, Mutex};
 
-    #[post("$route_print")]
-    pub async fn print_string(body: String) -> HttpResponse {
-        println!("{}", body);
-        HttpResponse::Ok().finish()
+    lazy_static! {
+        static ref MESSAGES: Arc< Mutex< Vec< String>>> = Arc::new(
+            Mutex::new(
+                vec![
+                    String::from("Welcome to the server!"),
+                ]
+            )
+        );
     }
 
-    pub async fn template(req: HttpRequest) -> HashMap<&'static str, String> {
+    #[derive(Deserialize)]
+    pub struct FormData {
+        message: String,
+    }
+
+    #[post("$route_print")]
+    pub async fn print_string(form: web::Form< FormData >) -> HttpResponse {
+        let mut messages = MESSAGES.lock().unwrap();
+        println!("{}", form.message);
+        messages.push(form.message.to_string());
+        HttpResponse::Found()
+            .append_header(("Location", "/"))
+            .finish()
+    }
+
+    #[derive(Serialize, Deserialize)]
+    pub struct PageData {
+        title: String,
+        messages: Vec< String>
+    }
+
+    pub async fn template(req: HttpRequest) -> PageData {
         let conn_info = req.connection_info();
         let host = conn_info.host().to_owned();
-        HashMap::from([
-            ("title", host)
-        ])
+        let messages = MESSAGES.lock().unwrap();
+        PageData {
+            title: host,
+            messages: messages.to_vec()
+        }
     }
 </rust>
 <!DOCTYPE html>
@@ -26,5 +55,18 @@
 <body>
 <h1>{{title}}</h1>
 <p>This is a test. The title displayed above should be like... your host name?</p>
+<p>Here are the messages stored in the server!</p>
+<div id="messages">
+{{#each messages}}
+    <pre>{{this}}</pre>
+{{/each}}
+</div>
+<form id="form" action="$route_print" method="post">
+    <label for="message">
+        Send a message to the server!
+        <input type="text" id="message" name="message">
+    </label>
+    <button>Print</button>
+</form>
 </body>
 </html>

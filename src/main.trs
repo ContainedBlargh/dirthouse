@@ -2,6 +2,10 @@ use actix_web::*;
 use handlebars::Handlebars;
 use actix_web::middleware::Logger;
 
+pub struct AppState {
+    handlebars: Handlebars<'static>,
+}
+
 #[get("/echo")]
 async fn echo(req_body: String) -> impl Responder {
     HttpResponse::Ok().body(req_body)
@@ -24,16 +28,8 @@ macro_rules! handlebars_response {
 {{#each modules}}
     {{#if this.has_template_fn}}
 #[get("{{route}}")]
-pub async fn {{name}}_template(req: HttpRequest) -> impl Responder {
-    let mut handlebars = Handlebars::new();
-    if let None = handlebars.get_template("{{name}}") {
-        handlebars
-            .register_template_string(
-                "{{name}}",
-                r###"{{{markup}}}"###
-            )
-            .expect("Could not register template {{name}}!");
-    }
+pub async fn {{name}}_template(req: HttpRequest, state: web::Data<AppState>) -> impl Responder {
+    let handlebars = &state.handlebars;
     let data = {{name}}::template(req).await;
     handlebars_response!(handlebars, "{{name}}", data)
 }
@@ -42,11 +38,18 @@ pub async fn {{name}}_template(req: HttpRequest) -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let mut handlebars = Handlebars::new();
     println!("Launching application http://{{config.host_addr}}:{{config.port}}");
     {{#each modules}}
     println!("│");
     {{#if this.has_template_fn}}
     println!("├─►[GET]: {{route}}");
+    handlebars
+        .register_template_string(
+            "{{name}}",
+            include_str!("{{name}}.html.hbs")
+        )
+        .expect("Could not register template {{name}}!");
     {{else}}
     println!("├─►{{route}}");
     {{/if}}
@@ -54,8 +57,10 @@ async fn main() -> std::io::Result<()> {
     println!("┼──►[{{method}}]: {{route}} {{name}}");
         {{/each}}
     {{/each}}
+    let handlebars = handlebars;
     HttpServer::new(move || {
         App::new()
+            .app_data(web::Data::new(AppState { handlebars: handlebars.clone() }))
             .service(echo)
     {{#each modules}}
         {{#if has_template_fn}}

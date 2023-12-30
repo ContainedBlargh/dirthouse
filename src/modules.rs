@@ -146,23 +146,23 @@ fn extract_services(source_code: &str) -> Vec<Service> {
 
 
 fn has_template_fn(source_code: &str) -> bool {
-    let pattern = r#"pub\s+async\s+fn\s+template\s*\(\s*req\s*:\s*HttpRequest\s*\)\s*->\s*HashMap<&'static str, String>"#;
+    let pattern = r#"pub\s+async\s+fn\s+template\s*\(\s*req\s*:\s*HttpRequest\s*\)\s*->\s*"#;
     let regex = Regex::new(pattern).expect("Invalid regex pattern");
-
     regex.is_match(source_code)
 }
 
 pub fn parse_module(module_desc: ModuleDesc) -> Option<Module> {
     extract_src_and_markup(&module_desc.path).map(|(source, markup)| {
-        let with_route = String::from(&source).replace("$route", module_desc.route.as_str());
+        let source_with_route = String::from(&source).replace("$route", module_desc.route.as_str());
+        let markup_with_route = String::from(&markup).replace("$route", module_desc.route.as_str());
         let services = extract_services(&source);
         let has_template_fn = has_template_fn(&source);
         let is_index = (&module_desc.name).eq("index");
         Module {
             path: module_desc.path,
             name: module_desc.name,
-            source: with_route,
-            markup,
+            source: source_with_route,
+            markup: markup_with_route,
             has_template_fn,
             is_index,
             services,
