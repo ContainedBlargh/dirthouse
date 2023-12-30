@@ -1,0 +1,73 @@
+use actix_web::*;
+use handlebars::Handlebars;
+use actix_web::middleware::Logger;
+
+#[get("/echo")]
+async fn echo(req_body: String) -> impl Responder {
+    HttpResponse::Ok().body(req_body)
+}
+
+macro_rules! handlebars_response {
+    ($handlebars:expr, $template:expr, $data:expr) => {
+        $handlebars.render($template, &$data)
+            .map_err(|e| {
+                eprintln!("Handlebars rendering error: {}", e);
+                HttpResponse::InternalServerError().finish()
+            })
+            .map(|content| HttpResponse::Ok()
+                .content_type(actix_web::http::header::ContentType::html())
+                .body(content))
+            .unwrap_or_else(|response| response)
+    };
+}
+
+{{#each modules}}
+    {{#if this.has_template_fn}}
+#[get("{{route}}")]
+pub async fn {{name}}_template(req: HttpRequest) -> impl Responder {
+    let mut handlebars = Handlebars::new();
+    if let None = handlebars.get_template("{{name}}") {
+        handlebars
+            .register_template_string(
+                "{{name}}",
+                r###"{{{markup}}}"###
+            )
+            .expect("Could not register template {{name}}!");
+    }
+    let data = {{name}}::template(req).await;
+    handlebars_response!(handlebars, "{{name}}", data)
+}
+    {{/if}}
+{{/each}}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    println!("Launching application http://{{config.host_addr}}:{{config.port}}");
+    {{#each modules}}
+    println!("│");
+    {{#if this.has_template_fn}}
+    println!("├─►[GET]: {{route}}");
+    {{else}}
+    println!("├─►{{route}}");
+    {{/if}}
+        {{#each this.services}}
+    println!("┼──►[{{method}}]: {{route}} {{name}}");
+        {{/each}}
+    {{/each}}
+    HttpServer::new(move || {
+        App::new()
+            .service(echo)
+    {{#each modules}}
+        {{#if has_template_fn}}
+            .service({{name}}_template)
+        {{/if}}
+        {{#each this.services}}
+            .service({{../name}}::{{name}})
+        {{/each}}
+    {{/each}}
+            .wrap(Logger::default())
+    })
+        .bind(("{{config.host_addr}}", {{config.port}}))?
+        .run()
+        .await
+}

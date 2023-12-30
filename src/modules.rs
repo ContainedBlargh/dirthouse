@@ -1,32 +1,48 @@
 use std::string::String;
 use std::fs;
-use std::fs::File;
-use std::hash::Hash;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::path::Path;
-use std::process::Command;
-use tl::NodeHandle;
 use walkdir::WalkDir;
+use regex::Regex;
+use serde::{Deserialize, Serialize};
 use crate::config::DirtConfig;
 
 #[derive(Clone, Debug)]
-pub struct Module {
-    path: String,
-    name: String
+pub struct ModuleDesc {
+    pub path: String,
+    pub name: String,
+    pub route: String
 }
 
-pub fn find_modules(dirt_config: &DirtConfig) -> Vec<Module> {
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Service {
+    pub method: String,
+    pub route: String,
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Module {
+    pub path: String,
+    pub name: String,
+    pub source: String,
+    pub markup: String,
+    pub has_template_fn: bool,
+    pub is_index: bool,
+    pub services: Vec<Service>,
+    pub route: String,
+}
+
+pub fn find_modules(dirt_config: &DirtConfig) -> Vec<ModuleDesc> {
     let current_dir = std::env::current_dir().unwrap();
     let mut modules = Vec::new();
     let path = std::path::Path::new(&dirt_config.serve_dir);
-    let search_path = if path.is_absolute() { path.to_path_buf() } else { current_dir.join(path) };
-    println!("Looking for files in path {:?}", search_path);
-    let walker = WalkDir::new(&search_path)
-        .into_iter()
-        .filter_map(|entry| entry.ok());
+    let search_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        current_dir.join(path)
+    };
+    let walker = WalkDir::new(&search_path).into_iter().filter_map(|entry| entry.ok());
 
     for entry in walker {
-        println!("{:?}", entry);
         let entry = entry.path();
         if let Some(extension) = entry.extension() {
             if extension != "rsr" {
@@ -35,123 +51,122 @@ pub fn find_modules(dirt_config: &DirtConfig) -> Vec<Module> {
 
             if let Some(file_name) = entry.file_name() {
                 if let Some(file_name_str) = file_name.to_str() {
-                    let (name, _) = file_name_str
-                        .rsplit_once('.')
-                        .unwrap();
-                    modules.push(
-                        Module {
-                            path: entry.to_string_lossy().to_string(),
-                            name: name.to_string()
-                        }
-                    );
+                    let (name, _) = file_name_str.rsplit_once('.').unwrap();
+                    let route = entry
+                        .strip_prefix(&search_path)
+                        .unwrap_or(entry)
+                        .to_string_lossy()
+                        .to_string();
+                    let route = route.strip_suffix(".rsr").unwrap_or(route.as_str());
+                    let route = route.replace('\\', "/");
+                    let route = if !route.starts_with('/') {
+                        format!("/{}", route)
+                    } else {
+                        route
+                    };
+                    let route = if name.eq("index") { String::from("/") } else  {route};
+                    modules.push(ModuleDesc {
+                        path: entry.to_string_lossy().to_string(),
+                        name: name.to_string(),
+                        route,
+                    });
                 }
             }
         }
     }
-    println!("Found modules: {:#?}!", modules);
     modules
-}
-
-fn ensure_lines_in_file(file_path: &Path, lines: Vec<String>) -> std::io::Result<()> {
-    // Read existing lines from the file
-    let existing_lines: Vec<String> = {
-        let file = File::open(file_path)?;
-        let reader = BufReader::new(file);
-        reader.lines().filter_map(|line| line.ok()).collect()
-    };
-
-    // Identify missing lines
-    let missing_lines: Vec<String> = lines
-        .into_iter()
-        .filter(|line| !existing_lines.contains(line))
-        .collect();
-
-    // If there are missing lines, append them to the file
-    if !missing_lines.is_empty() {
-        let mut file = fs::OpenOptions::new().append(true).open(file_path)?;
-        for line in missing_lines.into_iter() {
-            file.write(line.as_bytes())?;
-            file.write("\n".as_bytes())?;
-        }
-    }
-    Ok(())
-}
-
-pub const DEPS: [(&str, &str); 3] = [
-    ("actix-web", "\"4.4.1\""),
-    ("serde", "{ version = \"1.0.193\", features = [\"derive\"] }"),
-    ("serde_json", "\"1.0.108\"")
-];
-
-fn write_deps(path: &Path) -> std::io::Result<()> {
-    let dep_lines: Vec<String> = DEPS
-        .into_iter()
-        .map(|(package, ver)| format!("\"{}\" = {}", package, ver).to_string())
-        .collect();
-    ensure_lines_in_file(path, dep_lines.into())
-}
-
-macro_rules! replace_file {
-    ($file_path:expr, $content:expr) => {{
-        use std::fs::OpenOptions;
-        use std::io::Write;
-
-        // Open the file in write mode, creating it if it doesn't exist
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true) // Truncate the file if it already exists
-            .open($file_path)
-            .unwrap();
-
-        // Write the new content to the file
-        file.write_all($content.as_bytes()).unwrap();
-    }};
 }
 
 fn extract_src_and_markup(path: &String) -> anyhow::Result<(String, String)> {
     let file_content = fs::read_to_string(path)?;
-    let dom = tl::parse(file_content.as_str(), tl::ParserOptions::default())?;
-    let parser = dom.parser();
-    let rust_tags: Vec<NodeHandle> = dom.query_selector("rust").unwrap().collect();
-    let rust = rust_tags.first().unwrap();
-    let rust_parsed = rust.get(parser).unwrap();
-    println!("{:#?}", rust_parsed.outer_html(parser));
-    // TODO finish this implementation
-    return Ok((String::new(), String::new()))
+    let xml_content = file_content.as_str();
+    // Define the regex patterns
+    let start_pattern = r#"<rust>"#;
+    let end_pattern = r#"</rust>"#;
+    let comment_pattern = r#"(?s)<!--.*?-->"#;
+
+    // Create the regex patterns
+    let start_regex = Regex::new(start_pattern)?;
+    let end_regex = Regex::new(end_pattern)?;
+    let comment_regex = Regex::new(comment_pattern)?;
+
+    // Remove top-level comments
+    let content_without_comments = comment_regex.replace_all(xml_content, "");
+
+    // Find the start and end positions of the <rust> tag
+    let start_position = match start_regex.find(&content_without_comments) {
+        Some(pos) => pos.end(),
+        None => return Ok(("".to_string(), content_without_comments.to_string())),
+    };
+
+    let end_position = match end_regex.find(&content_without_comments) {
+        Some(pos) => pos.start(),
+        None => return Ok(("".to_string(), content_without_comments.to_string())),
+    };
+
+    // Extract the content inside the <rust> tag
+    let src_content = content_without_comments[start_position..end_position].trim().to_string()
+        .lines()
+        .map(|it| it.trim())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Extract the non-captured content
+    let markup_content = format!(
+        "{}{}",
+        &content_without_comments[..start_position - start_pattern.len()],
+        &content_without_comments[end_position + end_pattern.len()..],
+    );
+
+    Ok((src_content, markup_content))
 }
 
-pub fn compile_modules(config: &DirtConfig, modules: &Vec<Module>) {
-    let serve_dir_str = config.serve_dir.to_string();
-    let serve_dir = Path::new(&serve_dir_str);
-    let path = Path::new("app");
-    let dir_builder = fs::DirBuilder::new();// tempfile::tempdir().unwrap();
-    if let Ok(()) = dir_builder.create(path) {
-        // If the directory was just created, run cargo init.
-        Command::new("cargo")
-            .arg("init")
-            .arg("--lib")
-            .arg("--vcs")
-            .arg("none")
-            .arg(path)
-            .spawn()
-            .expect("Could not run cargo init for module folder")
-            .wait()
-            .expect("Could not wait for cargo init to complete for some reason?");
-    }
-    // Make sure that cargo has the minimal dependencies
-    let cargo_pb = path.join("Cargo.toml");
-    let cargo_path = cargo_pb.as_path();
-    write_deps(cargo_path).expect(format!("Could not add deps to {:?}/Cargo.toml", path).as_str());
+fn extract_services(source_code: &str) -> Vec<Service> {
+    let attribute_pattern = r#"#\[(connect|delete|get|head|main|options|patch|post|put|route|routes|dist|trace)\(([^)]*)\)\]"#;
+    let attribute_regex = Regex::new(attribute_pattern).expect("Invalid regex pattern");
 
-    // Now run through each of the modules and move their Rust implementation into files.
-    for module in modules {
-        if let Ok((src, markup)) = extract_src_and_markup(&module.path) {
-            let markup_path = serve_dir.join(format!("{}.html", module.name));
-            replace_file!(markup_path, markup);
-            let src_path = path.join(format!("{}.rs", module.name));
-            replace_file!(src_path, src);
+    let function_pattern = r#"async\s*fn\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*"#;
+    let function_regex = Regex::new(function_pattern).expect("Invalid regex pattern");
+
+    let mut services = Vec::new();
+
+    for attribute_capture in attribute_regex.captures_iter(source_code) {
+        let method = attribute_capture[1].to_string().to_uppercase();
+        let route = attribute_capture[2].to_string();
+        let remaining_code = &source_code[attribute_capture.get(0).unwrap().end()..];
+
+        if let Some(function_capture) = function_regex.captures(remaining_code) {
+            let route = route.replace('"', "");
+            let name = function_capture[1].to_string();
+            services.push(Service { method, route, name });
         }
     }
+    services
 }
 
+
+fn has_template_fn(source_code: &str) -> bool {
+    let pattern = r#"pub\s+async\s+fn\s+template\s*\(\s*req\s*:\s*HttpRequest\s*\)\s*->\s*HashMap<&'static str, String>"#;
+    let regex = Regex::new(pattern).expect("Invalid regex pattern");
+
+    regex.is_match(source_code)
+}
+
+pub fn parse_module(module_desc: ModuleDesc) -> Option<Module> {
+    extract_src_and_markup(&module_desc.path).map(|(source, markup)| {
+        let with_route = String::from(&source).replace("$route", module_desc.route.as_str());
+        let services = extract_services(&source);
+        let has_template_fn = has_template_fn(&source);
+        let is_index = (&module_desc.name).eq("index");
+        Module {
+            path: module_desc.path,
+            name: module_desc.name,
+            source: with_route,
+            markup,
+            has_template_fn,
+            is_index,
+            services,
+            route: module_desc.route
+        }
+    }).ok()
+}
