@@ -29,7 +29,9 @@ fn ensure_lines_in_file(file_path: &Path, lines: Vec<String>) -> std::io::Result
     Ok(())
 }
 
-const DEPS: [(&str, &str); 6] = [
+const DEPS: [(&str, &str); 8] = [
+    ("anyhow", "\"1.0.77\""),
+    ("actix-ws", "\"0.2.5\""),
     ("actix-web", "\"4.4.1\""),
     ("serde", "{ version = \"1.0.193\", features = [\"derive\"] }"),
     ("serde_json", "\"1.0.108\""),
@@ -41,14 +43,26 @@ const DEPS: [(&str, &str); 6] = [
 pub fn write_deps(config: &DirtConfig, path: &Path) -> std::io::Result<()> {
     let mut dep_lines: Vec<String> = DEPS
         .into_iter()
-        .map(|(package, ver)| format!("\"{}\" = {}", package, ver))
+        .map(|(package, ver)| format!("{} = {}", package, ver))
         .collect();
     let additional_deps = config.additional_packages
         .clone()
         .unwrap_or(vec![]);
     let additional_deps: Vec<String> = additional_deps
         .iter()
-        .map(|package| format!("\"{}\" = {}", package.name, package.descriptor))
+        .map(|package|
+            if let Some(value) = package.options.clone() {
+                let serialized = toml::to_string(&value).unwrap_or(String::new());
+                let lines: Vec<&str> = serialized.lines().collect();
+                let options = lines.join(", ");
+                format!("{} = {{ {} }}", package.name, options)
+            } else if let Some(version) = package.version.clone() {
+                format!("{} = \"{}\"", package.name, version)
+            } else {
+                eprintln!("Could not determine version or options for package '{}'.", package.name);
+                format!("# Could not determine version or options for package '{}'.", package.name)
+            }
+        )
         .collect();
     dep_lines.extend(additional_deps);
     ensure_lines_in_file(path, dep_lines)

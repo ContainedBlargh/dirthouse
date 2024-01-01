@@ -1,4 +1,4 @@
-<!-- language=rust prefix=<rust> suffix=</rust> -->
+<!-- language=rust prefix=<rust.*> suffix=</rust> -->
 <rust>
     use actix_web::*;
     use lazy_static::lazy_static;
@@ -6,7 +6,7 @@
     use std::sync::{Arc, Mutex};
 
     lazy_static! {
-        static ref MESSAGES: Arc< Mutex< Vec< String>>> = Arc::new(
+        pub static ref MESSAGES: Arc< Mutex< Vec< String>>> = Arc::new(
             Mutex::new(
                 vec![
                     String::from("Welcome to the server!"),
@@ -29,7 +29,7 @@
         let mut messages = MESSAGES.lock().unwrap();
         messages.push(new_message.to_string());
         HttpResponse::Found()
-            .append_header(("Location", "/"))
+            .append_header(("Location", "$route"))
             .finish()
     }
 
@@ -40,6 +40,7 @@
     }
 
     pub async fn template(req: HttpRequest) -> PageData {
+
         let conn_info = req.connection_info();
         let client = conn_info.realip_remote_addr().unwrap().to_owned();
         let title = format!("Welcome {}", client);

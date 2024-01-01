@@ -1,15 +1,16 @@
-mod modules;
+mod rsr_modules;
 mod config;
 mod dependencies;
+mod rs_modules;
 
 use std::{env, fs};
 use std::ops::Add;
 use std::path::Path;
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
-use modules::find_modules;
+use rsr_modules::find_rsr_modules;
 use crate::config::DirtConfig;
-use crate::modules::{Module};
+use crate::rsr_modules::{RsrModule};
 
 macro_rules! run {
     ($program:expr, $($arg:expr),*) => {
@@ -38,10 +39,14 @@ macro_rules! replace_file {
     }};
 }
 
-fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
+fn compile(
+    config: &DirtConfig,
+    rs_modules: &Vec<RsModuleDesc>,
+    rsr_modules: &Vec<RsrModule>,
+    main_source: String,
+) {
     let app_dir_path = Path::new(config.app_name.as_str());
     let dir_builder = fs::DirBuilder::new();// tempfile::tempdir().unwrap();
-
 
     if let Ok(()) = dir_builder.create(app_dir_path) {
         run!("cargo", "init", "--vcs", "none", app_dir_path).expect(
@@ -58,17 +63,30 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
     dependencies::write_deps(config, cargo_path).expect(expect_msg_str);
 
     // Now run through each of the modules and move their Rust implementation and markup into files.
-    for module in modules {
+    for module in rsr_modules {
         let markup_path = app_dir_path.join("src").join(format!("{}.html.hbs", module.name));
         replace_file!(markup_path, module.markup).expect("Could not replace markup file!");
-        let src_path = app_dir_path.join("src").join(format!("{}.rs", module.name));
-        replace_file!(src_path, module.source).expect("Could nto replace source file!");
+        if let Some(source) = module.source.clone() {
+            let src_path = app_dir_path.join("src").join(format!("{}.rs", module.name));
+            replace_file!(src_path, source).expect("Could not replace source file!");
+        }
     }
 
+    // Now copy regular Rust modules
+    for module in rs_modules {
+        let src_path = app_dir_path.join("src").join(format!("{}.rs", module.name));
+        let expect_msg = format!("Could not copy {}.rs to app dir!", module.name);
+        fs::copy(&module.path, src_path).expect(&expect_msg);
+    }
+
+    let mut added_modules: Vec<String> = rsr_modules.iter().map(|it|it.name.clone()).collect();
+    let added_rs_modules: Vec<String> = rs_modules.iter().map(|it|it.name.clone()).collect();
+    added_modules.extend(added_rs_modules);
+
     // Then construct the main.rs file.
-    let main_source = modules
+    let main_source = added_modules
         .iter()
-        .map(|module| format!("mod {};\n", module.name))
+        .map(|module| format!("mod {};\n", module))
         .reduce(|a, b| format!("{}\n{}", a, b))
         .unwrap_or(String::new())
         .add(main_source.as_str());
@@ -76,11 +94,11 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
     replace_file!(app_dir_path.join("src").join("main.rs"), main_source).expect("Could not replace main file!");
 
     // Now compile the executable:
-    let old_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(app_dir_path).expect("Could not switch working directory!");
+    let old_dir = env::current_dir().unwrap();
+    env::set_current_dir(app_dir_path).expect("Could not switch working directory!");
     run!("cargo", "fmt").expect("Could not format app sources!");
     run!("cargo", "build", "--release").expect("Could not build app!");
-    std::env::set_current_dir(old_dir).expect("Could not switch working directory back!");
+    env::set_current_dir(old_dir).expect("Could not switch working directory back!");
     let release_dir = app_dir_path.join("target").join("release");
     let app = if cfg!(windows) {
         format!("{}.exe", config.app_name.as_str())
@@ -114,10 +132,12 @@ fn compile(config: &DirtConfig, modules: &Vec<Module>, main_source: String) {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MainData {
     pub config: DirtConfig,
-    pub modules: Vec<Module>,
+    pub modules: Vec<RsrModule>,
 }
 
 use clap::{Arg, Command, Parser};
+use crate::rs_modules::{find_rs_modules, RsModuleDesc};
+
 fn cli() -> Command {
     Command::new("dirthouse")
         .about("php-like web apps with Rust")
@@ -137,20 +157,21 @@ fn cli() -> Command {
 
 fn build(cli_path: String) {
     let config = config::load(cli_path);
-    let modules: Vec<Module> = find_modules(&config)
+    let rsr_modules: Vec<RsrModule> = find_rsr_modules(&config)
         .into_iter()
-        .filter_map(modules::parse_module)
+        .filter_map(rsr_modules::parse_rsr_module)
         .collect();
+    let rs_modules: Vec<RsModuleDesc> = find_rs_modules(&config);
     let main_template = include_str!("main.trs");
     let handlebars = Handlebars::new();
     let main_data = MainData {
         config: config.clone(),
-        modules: modules.clone(),
+        modules: rsr_modules.clone(),
     };
     let rendered = handlebars
         .render_template(main_template, &main_data)
         .expect("Could not render config unto main template!");
-    compile(&config, &modules, rendered);
+    compile(&config, &rs_modules, &rsr_modules, rendered);
 }
 
 fn main() {
@@ -159,7 +180,7 @@ fn main() {
         Some(("build", sub_matches)) => {
             let config_path = sub_matches
                 .get_one::<String>("config")
-                .map(|it|it.to_owned())
+                .map(|it| it.to_owned())
                 .unwrap_or("config.json".to_string());
             build(config_path)
         }

@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use crate::config::DirtConfig;
 
 #[derive(Clone, Debug)]
-pub struct ModuleDesc {
+pub struct RsrModuleDesc {
     pub path: String,
     pub name: String,
-    pub route: String
+    pub route: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -20,10 +20,10 @@ pub struct Service {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Module {
+pub struct RsrModule {
     pub path: String,
     pub name: String,
-    pub source: String,
+    pub source: Option<String>,
     pub markup: String,
     pub has_template_fn: bool,
     pub is_index: bool,
@@ -31,7 +31,7 @@ pub struct Module {
     pub route: String,
 }
 
-pub fn find_modules(dirt_config: &DirtConfig) -> Vec<ModuleDesc> {
+pub fn find_rsr_modules(dirt_config: &DirtConfig) -> Vec<RsrModuleDesc> {
     let current_dir = std::env::current_dir().unwrap();
     let mut modules = Vec::new();
     let path = std::path::Path::new(&dirt_config.serve_dir);
@@ -48,7 +48,6 @@ pub fn find_modules(dirt_config: &DirtConfig) -> Vec<ModuleDesc> {
             if extension != "rsr" {
                 continue;
             }
-
             if let Some(file_name) = entry.file_name() {
                 if let Some(file_name_str) = file_name.to_str() {
                     let (name, _) = file_name_str.rsplit_once('.').unwrap();
@@ -64,8 +63,8 @@ pub fn find_modules(dirt_config: &DirtConfig) -> Vec<ModuleDesc> {
                     } else {
                         route
                     };
-                    let route = if name.eq("index") { String::from("/") } else  {route};
-                    modules.push(ModuleDesc {
+                    let route = if name.eq("index") { String::from("/") } else { route };
+                    modules.push(RsrModuleDesc {
                         path: entry.to_string_lossy().to_string(),
                         name: name.to_string(),
                         route,
@@ -77,11 +76,16 @@ pub fn find_modules(dirt_config: &DirtConfig) -> Vec<ModuleDesc> {
     modules
 }
 
-fn extract_src_and_markup(path: &String) -> anyhow::Result<(String, String)> {
+struct RsrModuleContent {
+    source: Option<String>,
+    markup: String,
+}
+
+fn extract_src_and_markup(path: &String) -> anyhow::Result<RsrModuleContent> {
     let file_content = fs::read_to_string(path)?;
     let xml_content = file_content.as_str();
     // Define the regex patterns
-    let start_pattern = r#"<rust>"#;
+    let start_pattern = r#"<rust.*>"#;
     let end_pattern = r#"</rust>"#;
     let comment_pattern = r#"(?s)<!--.*?-->"#;
 
@@ -96,12 +100,18 @@ fn extract_src_and_markup(path: &String) -> anyhow::Result<(String, String)> {
     // Find the start and end positions of the <rust> tag
     let start_position = match start_regex.find(&content_without_comments) {
         Some(pos) => pos.end(),
-        None => return Ok(("".to_string(), content_without_comments.to_string())),
+        None => return Ok(RsrModuleContent {
+            source: None,
+            markup: content_without_comments.to_string(),
+        })
     };
 
     let end_position = match end_regex.find(&content_without_comments) {
         Some(pos) => pos.start(),
-        None => return Ok(("".to_string(), content_without_comments.to_string())),
+        None => return Ok(RsrModuleContent {
+            source: None,
+            markup: content_without_comments.to_string(),
+        })
     };
 
     // Extract the content inside the <rust> tag
@@ -118,7 +128,10 @@ fn extract_src_and_markup(path: &String) -> anyhow::Result<(String, String)> {
         &content_without_comments[end_position + end_pattern.len()..],
     );
 
-    Ok((src_content, markup_content))
+    Ok(RsrModuleContent {
+        source: Some(src_content),
+        markup: markup_content,
+    })
 }
 
 fn extract_services(source_code: &str) -> Vec<Service> {
@@ -151,14 +164,21 @@ fn has_template_fn(source_code: &str) -> bool {
     regex.is_match(source_code)
 }
 
-pub fn parse_module(module_desc: ModuleDesc) -> Option<Module> {
-    extract_src_and_markup(&module_desc.path).map(|(source, markup)| {
-        let source_with_route = String::from(&source).replace("$route", module_desc.route.as_str());
+pub fn parse_rsr_module(module_desc: RsrModuleDesc) -> Option<RsrModule> {
+    extract_src_and_markup(&module_desc.path).map(|module: RsrModuleContent| {
+        let markup = module.markup;
         let markup_with_route = String::from(&markup).replace("$route", module_desc.route.as_str());
-        let services = extract_services(&source);
-        let has_template_fn = has_template_fn(&source);
+        let source_with_route = module.source
+            .clone()
+            .map(|source| String::from(&source).replace("$route", module_desc.route.as_str()));
+        let services = module.source
+            .clone()
+            .map(|source| extract_services(&source)).unwrap_or(Vec::new());
+        let has_template_fn = module.source
+            .clone()
+            .map(|source| has_template_fn(&source)).unwrap_or(false);
         let is_index = (&module_desc.name).eq("index");
-        Module {
+        RsrModule {
             path: module_desc.path,
             name: module_desc.name,
             source: source_with_route,
@@ -166,7 +186,7 @@ pub fn parse_module(module_desc: ModuleDesc) -> Option<Module> {
             has_template_fn,
             is_index,
             services,
-            route: module_desc.route
+            route: module_desc.route,
         }
     }).ok()
 }

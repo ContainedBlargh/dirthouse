@@ -4,8 +4,11 @@ use actix_web::middleware::Logger;
 use actix_files::NamedFile;
 use std::path::{Path, PathBuf};
 
-pub struct AppState {
+pub struct HandleBarsAndState {
     handlebars: Handlebars<'static>,
+    {{#each modules}}
+
+    {{/each}}
 }
 
 #[get("/echo")]
@@ -30,7 +33,7 @@ macro_rules! handlebars_response {
 {{#each modules}}
     {{#if this.has_template_fn}}
 #[get("{{route}}")]
-pub async fn {{name}}_template(req: HttpRequest, state: web::Data<AppState>) -> impl Responder {
+pub async fn {{name}}_template(req: HttpRequest, state: web::Data<HandleBarsAndState>) -> impl Responder {
     let handlebars = &state.handlebars;
     let data = {{name}}::template(req).await;
     handlebars_response!(handlebars, "{{name}}", data)
@@ -43,7 +46,7 @@ async fn serve_file(req: HttpRequest) -> Result<NamedFile> {
     let serve_path = Path::new("{{config.serve_dir}}");
     let path = serve_path.join(path);
     if let Some(extension) = path.extension() {
-        if extension.eq_ignore_ascii_case("rsr") {
+        if extension.eq_ignore_ascii_case("rsr") || extension.eq_ignore_ascii_case("rs") {
             panic!("Not found!");
         } else {
             return Ok(NamedFile::open(path)?);
@@ -77,7 +80,7 @@ async fn main() -> std::io::Result<()> {
     let handlebars = handlebars;
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(AppState { handlebars: handlebars.clone() }))
+            .app_data(web::Data::new(HandleBarsAndState { handlebars: handlebars.clone() }))
             .service(echo)
     {{#each modules}}
         {{#if has_template_fn}}

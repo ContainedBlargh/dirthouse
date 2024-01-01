@@ -2,5 +2,14 @@
   "app_name": "app",
   "serve_dir": "dist",
   "host_addr": "172.30.20.23",
-  "port": 7642
+  "port": 7642,
+  "additional_packages": [
+    {
+      "name": "ormlite",
+      "options": {
+        "version": "0.18.0",
+        "features": ["sqlite"]
+      }
+    }
+  ]
 }

@@ -1,12 +1,14 @@
-use std::env;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Package {
     pub name: String,
-    pub descriptor: String,
+    pub version: Option<String>,
+    pub options: Option<Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
