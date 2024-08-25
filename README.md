@@ -65,11 +65,6 @@ That's about it for now.
 
 I'll add some more documentation later :)
 
-<small> 
-I picked up the picture of the minecraft house on the interwebs, it's not even mine :'( 
-But  don't worry, I'll get a screenshot from minecraft soon™
-</small>
-
 ## Usage
 
 Since `dirthouse` calls `cargo` multiple times from the shell, it is required to have Rust and Cargo installed beforehand. You can download and install those at https://rustup.rs/.
